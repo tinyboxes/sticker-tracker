@@ -6,13 +6,14 @@ const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Oswal
 // North American exclusive parallel colors (border/foil chase versions).
 // Odds per Panini America: Orange (Amazon exclusive), Blue 1:2, Red 1:25, Purple 1:200, Green 1:1400, Black 1/1.
 const PARALLELS = [
-  { key: "Orange", color: "#F08A3C" },
-  { key: "Blue", color: "#3B82F6" },
-  { key: "Red", color: "#DC2626" },
-  { key: "Purple", color: "#9333EA" },
-  { key: "Green", color: "#16A34A" },
-  { key: "Black", color: "#1a1a1a" },
+  { key: "Black", color: "#1a1a1a", rarity: 6, label: "Black (1/1)" },
+  { key: "Green", color: "#16A34A", rarity: 5, label: "Green (1:1400)" },
+  { key: "Orange", color: "#F08A3C", rarity: 4, label: "Orange (Amazon excl.)" },
+  { key: "Purple", color: "#9333EA", rarity: 3, label: "Purple (1:200)" },
+  { key: "Red", color: "#DC2626", rarity: 2, label: "Red (1:25)" },
+  { key: "Blue", color: "#3B82F6", rarity: 1, label: "Blue (1:2)" },
 ];
+const PARALLEL_BY_KEY = Object.fromEntries(PARALLELS.map((p) => [p.key, p]));
 
 // 2026 World Cup group stage draw (Dec 5, 2025), 12 groups of 4.
 const TEAM_TO_GROUP = {
@@ -51,7 +52,7 @@ export default function StickerTracker() {
   const [stickers, setStickers] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState("all"); // all | missing | dupes
+  const [tab, setTab] = useState("all"); // all | missing | dupes | trade
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ number: "", team: "", player: "" });
   const [collapsed, setCollapsed] = useState({});
@@ -96,6 +97,40 @@ export default function StickerTracker() {
   }, [stickers, loaded]);
 
   const list = useMemo(() => Object.values(stickers), [stickers]);
+
+  const tradeList = useMemo(() => {
+    const parallelItems = [];
+    const dupeItems = [];
+    for (const s of list) {
+      const parallels = s.parallels || {};
+      for (const key of Object.keys(parallels)) {
+        const count = parallels[key];
+        if (count > 0) {
+          const meta = PARALLEL_BY_KEY[key];
+          parallelItems.push({ ...s, kind: "parallel", colorKey: key, colorLabel: meta ? meta.label : key, colorHex: meta ? meta.color : "#999", rarity: meta ? meta.rarity : 0, count });
+        }
+      }
+      if (s.owned > 1) {
+        dupeItems.push({ ...s, kind: "base", count: s.owned - 1, rarity: 0 });
+      }
+    }
+    parallelItems.sort((a, b) => a.rarity - b.rarity || naturalCompare(a.number, b.number));
+    dupeItems.sort((a, b) => naturalCompare(a.number, b.number));
+    return [...dupeItems, ...parallelItems];
+  }, [list]);
+
+  function copyTradeList() {
+    const lines = tradeList.map((item) =>
+      item.kind === "parallel"
+        ? `#${item.number} ${item.player} (${item.team}) — ${item.colorLabel}${item.count > 1 ? ` x${item.count}` : ""}`
+        : `#${item.number} ${item.player} (${item.team}) — base x${item.count}`
+    );
+    const text = lines.length ? lines.join("\n") : "No dupes or parallels to trade yet.";
+    navigator.clipboard.writeText(text).then(
+      () => { setCopyStatus("Trade list copied!"); setTimeout(() => setCopyStatus(""), 3000); },
+      () => { setCopyStatus("Couldn't copy — try again."); setTimeout(() => setCopyStatus(""), 3000); }
+    );
+  }
 
   const totals = useMemo(() => {
     const total = list.length;
@@ -161,7 +196,11 @@ export default function StickerTracker() {
       const cur = prev[number];
       const parallels = { ...(cur.parallels || {}) };
       const next = Math.max(0, (parallels[colorKey] || 0) + delta);
-      parallels[colorKey] = next;
+      if (next === 0) {
+        delete parallels[colorKey];
+      } else {
+        parallels[colorKey] = next;
+      }
       return { ...prev, [number]: { ...cur, parallels } };
     });
   }
@@ -254,7 +293,16 @@ export default function StickerTracker() {
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
         throw new Error("bad shape");
       }
-      setStickers(parsed);
+      // Strip any stale zero/negative parallel entries left over from older versions.
+      const cleaned = {};
+      for (const [number, s] of Object.entries(parsed)) {
+        const parallels = { ...(s.parallels || {}) };
+        for (const key of Object.keys(parallels)) {
+          if (!parallels[key] || parallels[key] <= 0) delete parallels[key];
+        }
+        cleaned[number] = { ...s, parallels };
+      }
+      setStickers(cleaned);
       setImportError("");
       setImportText("");
       setShowBackup(false);
@@ -329,16 +377,16 @@ export default function StickerTracker() {
         </div>
 
         <div style={{ display: "flex", gap: 6 }}>
-          {[["all", "All"], ["missing", "Need"], ["dupes", `Dupes (${totals.dupes})`]].map(([key, label]) => (
+          {[["all", "All"], ["missing", "Need"], ["dupes", `Dupes (${totals.dupes})`], ["trade", `Trade (${tradeList.length})`]].map(([key, label]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
               style={{
                 flex: 1,
-                padding: "8px 6px",
+                padding: "8px 3px",
                 borderRadius: 8,
                 border: "none",
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: 600,
                 background: tab === key ? "#E7C65C" : "rgba(244,239,225,0.08)",
                 color: tab === key ? "#1a1a1a" : "#F4EFE1",
@@ -360,7 +408,52 @@ export default function StickerTracker() {
           </div>
         )}
 
-        {grouped.map(([groupLabel, teams]) => {
+        {tab === "trade" && list.length > 0 && (
+          <div>
+            <button
+              onClick={copyTradeList}
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 0", borderRadius: 8, border: "none", background: "#E7C65C", color: "#1a1a1a", fontWeight: 600, cursor: "pointer", marginBottom: copyStatus ? 6 : 14 }}
+            >
+              <Download size={13} /> Copy trade list
+            </button>
+            {copyStatus && <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 14, textAlign: "center" }}>{copyStatus}</div>}
+
+            {tradeList.length === 0 && (
+              <div style={{ textAlign: "center", opacity: 0.6, marginTop: 40, fontSize: 14, lineHeight: 1.6 }}>
+                Nothing to trade yet.<br />Dupes and parallels will show up here.
+              </div>
+            )}
+
+            {tradeList.map((item, i) => (
+              <div
+                key={`${item.number}-${item.kind}-${item.colorKey || "base"}-${i}`}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px",
+                  borderRadius: 8, border: item.kind === "parallel" ? `2px solid ${item.colorHex}` : "1px solid rgba(244,239,225,0.15)",
+                  background: "rgba(244,239,225,0.05)", marginBottom: 6,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  {item.kind === "parallel" && <div style={{ width: 10, height: 10, borderRadius: "50%", background: item.colorHex, flexShrink: 0 }} />}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      #{item.number} {item.player}
+                    </div>
+                    <div style={{ fontSize: 10, opacity: 0.6 }}>{item.team}</div>
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: item.kind === "parallel" ? item.colorHex : "#F4EFE1" }}>
+                    {item.kind === "parallel" ? item.colorLabel.split(" (")[0] : "Base"}
+                  </div>
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>x{item.count}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab !== "trade" && grouped.map(([groupLabel, teams]) => {
           const allItems = teams.flatMap(([, items]) => items);
           const groupOwned = allItems.filter((s) => s.owned > 0).length;
           const groupKey = `grp-${groupLabel}`;
