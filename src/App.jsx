@@ -99,33 +99,22 @@ export default function StickerTracker() {
   const list = useMemo(() => Object.values(stickers), [stickers]);
 
   const tradeList = useMemo(() => {
-    const parallelItems = [];
     const dupeItems = [];
     for (const s of list) {
-      const parallels = s.parallels || {};
-      for (const key of Object.keys(parallels)) {
-        const count = parallels[key];
-        if (count > 0) {
-          const meta = PARALLEL_BY_KEY[key];
-          parallelItems.push({ ...s, kind: "parallel", colorKey: key, colorLabel: meta ? meta.label : key, colorHex: meta ? meta.color : "#999", rarity: meta ? meta.rarity : 0, count });
-        }
-      }
+      // Only base dupes go on the trade list. Parallels are tracked separately
+      // (via the sparkle icon) and deliberately excluded here — those are kept
+      // for selling/collecting on their own, not casual base-sticker trading.
       if (s.owned > 1) {
-        dupeItems.push({ ...s, kind: "base", count: s.owned - 1, rarity: 0 });
+        dupeItems.push({ ...s, kind: "base", count: s.owned - 1 });
       }
     }
-    parallelItems.sort((a, b) => a.rarity - b.rarity || naturalCompare(a.number, b.number));
     dupeItems.sort((a, b) => naturalCompare(a.number, b.number));
-    return [...dupeItems, ...parallelItems];
+    return dupeItems;
   }, [list]);
 
   function copyTradeList() {
-    const lines = tradeList.map((item) =>
-      item.kind === "parallel"
-        ? `#${item.number} ${item.player} (${item.team}) — ${item.colorLabel}${item.count > 1 ? ` x${item.count}` : ""}`
-        : `#${item.number} ${item.player} (${item.team}) — base x${item.count}`
-    );
-    const text = lines.length ? lines.join("\n") : "No dupes or parallels to trade yet.";
+    const lines = tradeList.map((item) => `#${item.number} ${item.player} (${item.team}) — x${item.count}`);
+    const text = lines.length ? lines.join("\n") : "No dupes to trade yet.";
     navigator.clipboard.writeText(text).then(
       () => { setCopyStatus("Trade list copied!"); setTimeout(() => setCopyStatus(""), 3000); },
       () => { setCopyStatus("Couldn't copy — try again."); setTimeout(() => setCopyStatus(""), 3000); }
@@ -420,21 +409,20 @@ export default function StickerTracker() {
 
             {tradeList.length === 0 && (
               <div style={{ textAlign: "center", opacity: 0.6, marginTop: 40, fontSize: 14, lineHeight: 1.6 }}>
-                Nothing to trade yet.<br />Dupes and parallels will show up here.
+                Nothing to trade yet.<br />Base dupes will show up here.
               </div>
             )}
 
             {tradeList.map((item, i) => (
               <div
-                key={`${item.number}-${item.kind}-${item.colorKey || "base"}-${i}`}
+                key={`${item.number}-${i}`}
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px",
-                  borderRadius: 8, border: item.kind === "parallel" ? `2px solid ${item.colorHex}` : "1px solid rgba(244,239,225,0.15)",
+                  borderRadius: 8, border: "1px solid rgba(244,239,225,0.15)",
                   background: "rgba(244,239,225,0.05)", marginBottom: 6,
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                  {item.kind === "parallel" && <div style={{ width: 10, height: 10, borderRadius: "50%", background: item.colorHex, flexShrink: 0 }} />}
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       #{item.number} {item.player}
@@ -443,9 +431,6 @@ export default function StickerTracker() {
                   </div>
                 </div>
                 <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: item.kind === "parallel" ? item.colorHex : "#F4EFE1" }}>
-                    {item.kind === "parallel" ? item.colorLabel.split(" (")[0] : "Base"}
-                  </div>
                   <div style={{ fontSize: 11, opacity: 0.7 }}>x{item.count}</div>
                 </div>
               </div>
