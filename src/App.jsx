@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Search, Plus, Minus, X, Loader2, Sparkles, Download, Upload } from "lucide-react";
+import { Search, Plus, Minus, X, Loader2, Sparkles, Download, Upload, Eye, EyeOff } from "lucide-react";
 
 const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&display=swap');`;
 
@@ -40,6 +40,7 @@ const CHECKLIST_2026_NA = [["00","FWC","Panini Logo",1],["FWC1","FWC","Official 
 // alongside the base checklist. Each row: [number, team, player, foil(0)]
 const UPDATE_SET_2026 = [["MEX2U","Mexico","Guillermo Ochoa",false],["MEX8U","Mexico","Gilberto Mora",false],["MEX9U","Mexico","Álvaro Fidalgo",false],["MEX12U","Mexico","Érik Lira",false],["MEX14U","Mexico","Brian Gutiérrez",false],["MEX15U","Mexico","Armando González",false],["RSA8U","South Africa","Ime Okon",false],["RSA14U","South Africa","Themba Zwane",false],["RSA16U","South Africa","Jayden Adams",false],["RSA19U","South Africa","Relebohile Mofokeng",false],["KOR5U","South Korea","Moonhwan Kim",false],["KOR9U","South Korea","Taehyeon Kim",false],["CZE15U","Czechia","David Douděra",false],["CZE16U","Czechia","Vladimír Darida",false],["CZE18U","Czechia","Mojmír Chytil",false],["CAN5U","Canada","Joel Waterman",false],["CAN9U","Canada","Alfie Jones",false],["QAT8U","Qatar","Ayoub Aloui",false],["QAT14U","Qatar","Jassem Gaber",false],["QAT19U","Qatar","Mohammed Muntari",false],["BRA3U","Brazil","Weverton",false],["BRA5U","Brazil","Alex Sandro",false],["BRA15U","Brazil","Neymar Jr",false],["BRA16U","Brazil","Endrick",false],["BRA20U","Brazil","Igor Thiago",false],["MAR7U","Morocco","Issa Diop",false],["MAR8U","Morocco","Anass Salah-Eddine",false],["MAR9U","Morocco","Chadi Riad",false],["MAR12U","Morocco","Neil El Aynaoui",false],["MAR16U","Morocco","Chemsdine Talbi",false],["HAI8U","Haiti","Wilguens Paugain",false],["HAI14U","Haiti","Wilson Isidor",false],["SCO12U","Scotland","Nathan Patterson",false],["USA9U","USA","Gio Reyna",false],["USA14U","USA","Sebastian Berhalter",false],["PAR9U","Paraguay","Braian Ojeda",false],["PAR19U","Paraguay","Álex Arce",false],["AUS3U","Australia","Paul Izzo",false],["AUS9U","Australia","Jason Geria",false],["AUS12U","Australia","Ajdin Hrustic",false],["AUS16U","Australia","Paul Okon-Engstler",false],["AUS17U","Australia","Nishan Velupillay",false],["GER2U","Germany","Manuel Neuer",false],["GER8U","Germany","Malick Thiaw",false],["GER9U","Germany","Angelo Stiller",false],["GER16U","Germany","Aleksandar Pavlović",false],["GER19U","Germany","Deniz Undav",false],["CIV7U","Ivory Coast","Guéla Doué",false],["CIV14U","Ivory Coast","Nicolas Pépé",false],["CIV16U","Ivory Coast","Elye Wahi",false],["ECU15U","Ecuador","Anthony Valencia",false],["NED8U","Netherlands","Quinten Timber",false],["NED15U","Netherlands","Noa Lang",false],["JPN3U","Japan","Hiroki Ito",false],["JPN9U","Japan","Wataru Endo",false],["JPN16U","Japan","Daizen Maeda",false],["JPN17U","Japan","Yuito Suzuki",false],["SWE5U","Sweden","Carl Starfelt",false],["SWE9U","Sweden","Besfort Zeneli",false],["SWE16U","Sweden","Benjamin Nygren",false],["SWE17U","Sweden","Alexander Bernhardsson",false],["TUN2U","Tunisia","Abdelmouhib Chamakh",false],["TUN6U","Tunisia","Omar Rekik",false],["TUN10U","Tunisia","Rani Khedira",false],["TUN11U","Tunisia","Anis Ben Slimane",false],["TUN12U","Tunisia","Mohamed Belhadj Mahmoud",false],["TUN19U","Tunisia","Sebastian Tounekti",false],["TUN20U","Tunisia","Mortadha Ben Ouanes",false],["BEL19U","Belgium","Dodi Lukébakio",false],["EGY4U","Egypt","Mohamed Abdelmonem",false],["EGY6U","Egypt","Mahmoud Saber",false],["EGY16U","Egypt","Ibrahim Adel",false],["EGY18U","Egypt","Haissem Hassan",false],["IRN3U","Iran","Arya Yousefi",false],["IRN9U","Iran","Ali Nemati",false],["IRN14U","Iran","Amirmohammad Razzaghinia",false],["IRN17U","Iran","Ali Alipour",false],["IRN20U","Iran","Amirhossein Hosseinzadeh",false],["ESP3U","Spain","Pau Cubarsí",false],["ESP5U","Spain","Alejandro Grimaldo",false],["ESP7U","Spain","Marcos Llorente",false],["ESP19U","Spain","Yeremy Pino",false],["CPV11U","Cape Verde","Laros Duarte",false],["CPV20U","Cape Verde","Nuno Da Costa",false],["KSA3U","Saudi Arabia","Abdulelah Alamri",false],["KSA14U","Saudi Arabia","Mohamed Kanno",false],["KSA15U","Saudi Arabia","Ali Majrashi",false],["KSA17U","Saudi Arabia","Sultan Mandash",false],["URU9U","Uruguay","Matías Viña",false],["FRA10U","France","N'Golo Kanté",false],["FRA18U","France","Rayan Cherki",false],["FRA19U","France","Marcus Thuram",false],["SEN17U","Senegal","Ibrahim Mbaye",false],["IRQ17U","Iraq","Kevin Yakob",false],["NOR17U","Norway","Jens Petter Hauge",false],["ARG15U","Argentina","Giovani Lo Celso",false],["ALG2U","Algeria","Luca Zidane",false],["ALG4U","Algeria","Rafik Belghali",false],["ALG8U","Algeria","Ibrahim Maza",false],["ALG16U","Algeria","Adil Boulbina",false],["ALG19U","Algeria","Farès Ghedjemis",false],["JOR16U","Jordan","Odeh Fakhoury",false],["UZB6U","Uzbekistan","Jakhongir Urozov",false],["UZB14U","Uzbekistan","Azizjon Ganiev",false],["UZB15U","Uzbekistan","Akmal Mozgovoy",false],["ENG6U","England","Nico O'Reilly",false],["ENG12U","England","Eberechi Eze",false],["ENG16U","England","Noni Madueke",false],["CRO12U","Croatia","Nikola Vlašić",false],["CRO20U","Croatia","Igor Matanović",false],["GHA3U","Ghana","Benjamin Asare",false],["GHA4U","Ghana","Kojo Peprah Oppong",false],["GHA6U","Ghana","Jonas Adjetey",false],["GHA11U","Ghana","Kwasi Sibo",false],["GHA14U","Ghana","Christopher Bonsu Baah",false],["GHA17U","Ghana","Ernest Nuamah",false],["GHA18U","Ghana","Brandon Thomas-Asante",false],["GHA19U","Ghana","Prince Adu",false]];
 const ALL_OFFICIAL_NUMBERS = new Set([...CHECKLIST_2026_NA, ...UPDATE_SET_2026].map((row) => row[0]));
+const UPDATE_SET_NUMBERS = new Set(UPDATE_SET_2026.map((row) => row[0]));
 
 function naturalCompare(a, b) {
   const numA = parseInt((a.match(/(\d+)[A-Za-z]*$/) || [0, 0])[1], 10);
@@ -57,6 +58,7 @@ export default function StickerTracker() {
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
+  const [showUpdateSet, setShowUpdateSet] = useState(false);
   const [tab, setTab] = useState("all"); // all | missing | dupes | trade
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ number: "", team: "", player: "" });
@@ -101,7 +103,10 @@ export default function StickerTracker() {
     }, 400);
   }, [stickers, loaded]);
 
-  const list = useMemo(() => Object.values(stickers), [stickers]);
+  const list = useMemo(() => {
+    const all = Object.values(stickers);
+    return showUpdateSet ? all : all.filter((s) => !UPDATE_SET_NUMBERS.has(s.number));
+  }, [stickers, showUpdateSet]);
 
   const suggestions = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -358,6 +363,13 @@ export default function StickerTracker() {
             WC <span style={{ color: "#E7C65C" }}>2026</span>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={() => setShowUpdateSet((v) => !v)}
+              title={showUpdateSet ? "Hide Update Set stickers" : "Show Update Set stickers"}
+              style={{ display: "flex", alignItems: "center", gap: 4, background: showUpdateSet ? "rgba(231,198,94,0.15)" : "rgba(244,239,225,0.08)", border: showUpdateSet ? "1px solid rgba(231,198,94,0.4)" : "1px solid rgba(244,239,225,0.2)", color: showUpdateSet ? "#E7C65C" : "#F4EFE1", borderRadius: 7, padding: "6px 8px", fontSize: 10, fontWeight: 600, cursor: "pointer" }}
+            >
+              {showUpdateSet ? <Eye size={12} /> : <EyeOff size={12} />} Update Set
+            </button>
             <button
               onClick={() => setShowBackup(true)}
               style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(244,239,225,0.08)", border: "1px solid rgba(244,239,225,0.2)", color: "#F4EFE1", borderRadius: 7, padding: "6px 8px", cursor: "pointer" }}
