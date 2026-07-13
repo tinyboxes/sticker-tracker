@@ -79,24 +79,22 @@ export default function StickerTracker() {
   }
 
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await window.storage.get("collection", false);
-        if (res && res.value) setStickers(JSON.parse(res.value));
-      } catch (e) {
-        // no existing collection yet
-      } finally {
-        setLoaded(true);
-      }
-    })();
+    try {
+      const raw = localStorage.getItem("wc2026-stickers");
+      if (raw) setStickers(JSON.parse(raw));
+    } catch (e) {
+      // no existing collection yet
+    } finally {
+      setLoaded(true);
+    }
   }, []);
 
   useEffect(() => {
     if (!loaded) return;
     clearTimeout(saveTimeout.current);
-    saveTimeout.current = setTimeout(async () => {
+    saveTimeout.current = setTimeout(() => {
       try {
-        await window.storage.set("collection", JSON.stringify(stickers), false);
+        localStorage.setItem("wc2026-stickers", JSON.stringify(stickers));
       } catch (e) {
         console.error("save failed", e);
       }
@@ -336,14 +334,14 @@ export default function StickerTracker() {
 
   if (!loaded) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0F2F22" }}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#141210" }}>
         <Loader2 className="animate-spin" color="#E7C65C" size={28} />
       </div>
     );
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0F2F22", fontFamily: "'Inter', sans-serif", color: "#F4EFE1", paddingBottom: 90 }}>
+    <div style={{ minHeight: "100vh", background: "#141210", fontFamily: "'Inter', sans-serif", color: "#F4EFE1", paddingBottom: 90 }}>
       <style>{FONT_IMPORT}{`
         .pitch-stripe { background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 40px, transparent 40px, transparent 80px); }
         .slot { border: 2px dashed rgba(244,239,225,0.28); border-radius: 10px; }
@@ -354,7 +352,7 @@ export default function StickerTracker() {
       `}</style>
 
       {/* Header */}
-      <div className="pitch-stripe" style={{ padding: "16px 16px 12px", position: "sticky", top: 0, background: "#0F2F22", zIndex: 10, borderBottom: "1px solid rgba(244,239,225,0.12)" }}>
+      <div className="pitch-stripe" style={{ padding: "16px 16px 12px", position: "sticky", top: 0, background: "#141210", zIndex: 10, borderBottom: "1px solid rgba(244,239,225,0.12)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: 0.5 }}>
             WC <span style={{ color: "#E7C65C" }}>2026</span>
@@ -411,7 +409,7 @@ export default function StickerTracker() {
             style={{ width: "100%", padding: "9px 10px 9px 32px", borderRadius: 8, border: "1px solid rgba(244,239,225,0.2)", background: "rgba(244,239,225,0.06)", color: "#F4EFE1", fontSize: 14, boxSizing: "border-box" }}
           />
           {searchFocused && query.trim() && suggestions.length > 0 && (
-            <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "#1F4632", border: "1px solid rgba(244,239,225,0.2)", borderRadius: 8, overflow: "hidden", zIndex: 30, boxShadow: "0 6px 16px rgba(0,0,0,0.4)" }}>
+            <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "#211D17", border: "1px solid rgba(244,239,225,0.2)", borderRadius: 8, overflow: "hidden", zIndex: 30, boxShadow: "0 6px 16px rgba(0,0,0,0.4)" }}>
               {suggestions.map((s) => (
                 <button
                   key={s.number}
@@ -431,7 +429,7 @@ export default function StickerTracker() {
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
               <div style={{ flex: 1, height: 8, background: "rgba(244,239,225,0.15)", borderRadius: 999, overflow: "hidden" }}>
-                <div style={{ width: `${totals.pct}%`, height: "100%", background: "#E7C65C", transition: "width 0.3s" }} />
+                <div style={{ width: `${totals.pct}%`, height: "100%", background: "#3EA86B", transition: "width 0.3s" }} />
               </div>
               <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, whiteSpace: "nowrap" }}>
                 {totals.owned}/{totals.total} · {totals.pct}%
@@ -601,7 +599,7 @@ export default function StickerTracker() {
           <form
             onSubmit={addSticker}
             onClick={(e) => e.stopPropagation()}
-            style={{ background: "#183D2C", width: "100%", padding: "20px 18px 28px", borderRadius: "16px 16px 0 0", display: "flex", flexDirection: "column", gap: 10 }}
+            style={{ background: "#211D17", width: "100%", padding: "20px 18px 28px", borderRadius: "16px 16px 0 0", display: "flex", flexDirection: "column", gap: 10 }}
           >
             <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 17, marginBottom: 4 }}>Add sticker</div>
             <input autoFocus placeholder="Number (e.g. 128)" value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} style={inputStyle} />
@@ -617,7 +615,7 @@ export default function StickerTracker() {
       {/* Parallel picker modal */}
       {parallelFor && stickers[parallelFor] && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "flex-end", zIndex: 20 }} onClick={() => setParallelFor(null)}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#183D2C", width: "100%", padding: "20px 18px 28px", borderRadius: "16px 16px 0 0" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#211D17", width: "100%", padding: "20px 18px 28px", borderRadius: "16px 16px 0 0" }}>
             <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 17, marginBottom: 2 }}>
               #{parallelFor} parallels
             </div>
@@ -667,7 +665,7 @@ export default function StickerTracker() {
       {/* Load checklist confirm modal */}
       {confirmLoad && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20, padding: 24 }} onClick={() => setConfirmLoad(false)}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#183D2C", borderRadius: 14, padding: 22, maxWidth: 320 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#211D17", borderRadius: 14, padding: 22, maxWidth: 320 }}>
             <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 17, marginBottom: 8 }}>Load official 2026 checklist?</div>
             <div style={{ fontSize: 13, opacity: 0.8, lineHeight: 1.5, marginBottom: 18 }}>
               Adds all 48 teams, 979 North American base stickers, plus the 118-sticker June 2026 Update Set (roster changes — coded with a trailing "U", e.g. GER2U). Anything you've already marked owned stays as-is.
@@ -682,7 +680,7 @@ export default function StickerTracker() {
       {/* Delete confirm modal */}
       {confirmDelete && stickers[confirmDelete] && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20, padding: 24 }} onClick={() => setConfirmDelete(null)}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#183D2C", borderRadius: 14, padding: 22, maxWidth: 320 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#211D17", borderRadius: 14, padding: 22, maxWidth: 320 }}>
             <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 17, marginBottom: 8 }}>
               Delete #{confirmDelete}?
             </div>
@@ -716,7 +714,7 @@ export default function StickerTracker() {
       {/* Backup / Restore modal */}
       {showBackup && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "flex-end", zIndex: 20 }} onClick={() => setShowBackup(false)}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#183D2C", width: "100%", maxHeight: "85vh", overflowY: "auto", padding: "20px 18px 28px", borderRadius: "16px 16px 0 0" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#211D17", width: "100%", maxHeight: "85vh", overflowY: "auto", padding: "20px 18px 28px", borderRadius: "16px 16px 0 0" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 17 }}>Backup & restore</div>
               <button onClick={() => setShowBackup(false)} style={{ background: "none", border: "none", color: "#F4EFE1", opacity: 0.6, cursor: "pointer" }}>
