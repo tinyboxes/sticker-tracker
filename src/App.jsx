@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Search, Plus, Minus, X, Loader2, Sparkles, Download, Upload, Eye, EyeOff } from "lucide-react";
+import { Search, Plus, Minus, X, Loader2, Sparkles, Download, Upload, Eye, EyeOff, Check, ShoppingBag, Copy, Star } from "lucide-react";
 
 const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&display=swap');`;
 
@@ -42,11 +42,82 @@ const UPDATE_SET_2026 = [["MEX2U","Mexico","Guillermo Ochoa",false],["MEX8U","Me
 const ALL_OFFICIAL_NUMBERS = new Set([...CHECKLIST_2026_NA, ...UPDATE_SET_2026].map((row) => row[0]));
 const UPDATE_SET_NUMBERS = new Set(UPDATE_SET_2026.map((row) => row[0]));
 
+// Recognizable star players — flagged as extra-valuable trade bait regardless of
+// how many spare copies you have. This is a curated list, not exhaustive.
+const STAR_PLAYER_NUMBERS = new Set([
+  "ARG17", // Lionel Messi
+  "ARG19", // Julian Alvarez
+  "ARG18", // Lautaro Martinez
+  "POR15", // Cristiano Ronaldo
+  "NOR15", // Erling Haaland
+  "FRA20", // Kylian Mbappe
+  "FRA15", // Ousmane Dembele
+  "ESP15", // Lamine Yamal
+  "ESP10", // Rodri
+  "ESP11", // Pedri
+  "BRA14", // Vinicius Junior
+  "BRA10", // Casemiro
+  "EGY17", // Mohamed Salah
+  "ENG18", // Harry Kane
+  "ENG11", // Jude Bellingham
+  "ENG17", // Bukayo Saka
+  "ENG16", // Phil Foden
+  "BEL15", // Kevin De Bruyne
+  "BEL20", // Romelu Lukaku
+  "GER11", // Florian Wirtz
+  "GER15", // Jamal Musiala
+  "GER10", // Joshua Kimmich
+  "CRO9",  // Luka Modric
+  "KOR18", // Heung-min Son
+  "NED14", // Frenkie de Jong
+  "NED3",  // Virgil van Dijk
+  "URU17", // Darwin Nunez
+  "COL20", // Luis Diaz
+  "MAR4",  // Achraf Hakimi
+]);
+
 function naturalCompare(a, b) {
   const numA = parseInt((a.match(/(\d+)[A-Za-z]*$/) || [0, 0])[1], 10);
   const numB = parseInt((b.match(/(\d+)[A-Za-z]*$/) || [0, 0])[1], 10);
   if (numA !== numB) return numA - numB;
   return a.localeCompare(b);
+}
+
+// Sorts items by World Cup draw group (A, B, C... then Tournament), then team
+// name within the group, then sticker number within the team.
+function byDrawGroup(a, b) {
+  const groupA = GROUP_ORDER.indexOf(TEAM_TO_GROUP[a.team] || "Tournament");
+  const groupB = GROUP_ORDER.indexOf(TEAM_TO_GROUP[b.team] || "Tournament");
+  if (groupA !== groupB) return groupA - groupB;
+  return a.team.localeCompare(b.team) || naturalCompare(a.number, b.number);
+}
+
+// Some mobile browsers (notably iOS Safari, especially in installed/PWA mode)
+// block or silently fail navigator.clipboard.writeText. Fall back to the older
+// execCommand approach, which works in more contexts, before giving up.
+async function copyToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      // fall through to legacy method
+    }
+  }
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return ok;
+  } catch (e) {
+    return false;
+  }
 }
 
 function uid() {
@@ -59,7 +130,13 @@ export default function StickerTracker() {
   const [query, setQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [showUpdateSet, setShowUpdateSet] = useState(false);
+  const [tradeSortMode, setTradeSortMode] = useState("group"); // surplus | group | alpha
+  const [tradeToggleMode, setTradeToggleMode] = useState("surplus"); // which of surplus/alpha the toggle button shows
+  const [showStarPlayers, setShowStarPlayers] = useState(true);
+  const [tradeSelection, setTradeSelection] = useState({}); // { [number]: qty } — what's being ticked off for this trade
+  const [showTradeReview, setShowTradeReview] = useState(false);
   const [tab, setTab] = useState("all"); // all | missing | dupes | trade
+  const [showDupesTab, setShowDupesTab] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ number: "", team: "", player: "" });
   const [collapsed, setCollapsed] = useState({});
@@ -103,6 +180,10 @@ export default function StickerTracker() {
     }, 400);
   }, [stickers, loaded]);
 
+  useEffect(() => {
+    if (tab === "dupes" && !showDupesTab) setTab("all");
+  }, [showDupesTab, tab]);
+
   const list = useMemo(() => {
     const all = Object.values(stickers);
     return showUpdateSet ? all : all.filter((s) => !UPDATE_SET_NUMBERS.has(s.number));
@@ -121,7 +202,7 @@ export default function StickerTracker() {
       .slice(0, 5);
   }, [list, query]);
 
-  const tradeList = useMemo(() => {
+  const tradeItems = useMemo(() => {
     const dupeItems = [];
     for (const s of list) {
       // Only base dupes go on the trade list. Owned includes parallel copies,
@@ -138,7 +219,6 @@ export default function StickerTracker() {
         dupeItems.push({ ...s, kind: "base", count: tradeableBase });
       }
     }
-    dupeItems.sort((a, b) => naturalCompare(a.number, b.number));
     const q = query.trim().toLowerCase();
     if (!q) return dupeItems;
     return dupeItems.filter(
@@ -149,13 +229,129 @@ export default function StickerTracker() {
     );
   }, [list, query]);
 
-  function copyTradeList() {
-    const lines = tradeList.map((item) => `#${item.number} ${item.player} (${item.team}) — x${item.count}`);
+  const tradeGroups = useMemo(() => {
+    const byTeam = {};
+    for (const item of tradeItems) {
+      const key = item.team || "Unsorted";
+      if (!byTeam[key]) byTeam[key] = [];
+      byTeam[key].push(item);
+    }
+    // Always sort stickers within a team by number, never by count.
+    for (const team of Object.keys(byTeam)) {
+      byTeam[team].sort((a, b) => naturalCompare(a.number, b.number));
+    }
+    const teamTotal = (team) => byTeam[team].reduce((s, i) => s + i.count, 0);
+
+    if (tradeSortMode === "alpha") {
+      const teams = Object.keys(byTeam).sort((a, b) => a.localeCompare(b));
+      return [{ label: null, teams: teams.map((t) => [t, byTeam[t]]) }];
+    }
+
+    if (tradeSortMode === "group") {
+      const byGroup = {};
+      for (const team of Object.keys(byTeam)) {
+        const g = TEAM_TO_GROUP[team] || "Tournament";
+        if (!byGroup[g]) byGroup[g] = [];
+        byGroup[g].push(team);
+      }
+      for (const g of Object.keys(byGroup)) byGroup[g].sort((a, b) => a.localeCompare(b));
+      return GROUP_ORDER.filter((g) => byGroup[g]).map((g) => ({
+        label: g === "Tournament" ? "TOURNAMENT" : `GROUP ${g}`,
+        teams: byGroup[g].map((t) => [t, byTeam[t]]),
+      }));
+    }
+
+    // "surplus" (default): teams with the most total tradeable copies float to the top.
+    const teams = Object.keys(byTeam).sort((a, b) => teamTotal(b) - teamTotal(a));
+    return [{ label: null, teams: teams.map((t) => [t, byTeam[t]]) }];
+  }, [tradeItems, tradeSortMode]);
+
+  async function copyTradeList() {
+    const sorted = tradeItems.slice().sort(byDrawGroup);
+    const lines = [];
+    let lastGroup = null;
+    for (const item of sorted) {
+      const g = TEAM_TO_GROUP[item.team] || "Tournament";
+      if (g !== lastGroup) {
+        lines.push(`— ${g === "Tournament" ? "TOURNAMENT" : `GROUP ${g}`} —`);
+        lastGroup = g;
+      }
+      lines.push(`#${item.number} ${item.player} (${item.team}) — x${item.count}`);
+    }
     const text = lines.length ? lines.join("\n") : "No dupes to trade yet.";
-    navigator.clipboard.writeText(text).then(
-      () => { setCopyStatus("Trade list copied!"); setTimeout(() => setCopyStatus(""), 3000); },
-      () => { setCopyStatus("Couldn't copy — try again."); setTimeout(() => setCopyStatus(""), 3000); }
-    );
+    const ok = await copyToClipboard(text);
+    setCopyStatus(ok ? "Trade list copied!" : "Couldn't copy — try again.");
+    setTimeout(() => setCopyStatus(""), 3000);
+  }
+
+  function toggleTradeSelect(item) {
+    setTradeSelection((prev) => {
+      const next = { ...prev };
+      if (next[item.number]) {
+        delete next[item.number];
+      } else {
+        next[item.number] = 1; // default to offering just 1; bump up with +/- if more
+      }
+      return next;
+    });
+  }
+
+  function bumpTradeSelectQty(number, maxCount, delta) {
+    setTradeSelection((prev) => {
+      const cur = prev[number] || 0;
+      const next = Math.min(maxCount, Math.max(1, cur + delta));
+      return { ...prev, [number]: next };
+    });
+  }
+
+  function clearTradeSelection() {
+    setTradeSelection({});
+    setShowTradeReview(false);
+  }
+
+  const selectedCount = Object.keys(tradeSelection).length;
+  const selectedTotalQty = Object.values(tradeSelection).reduce((s, q) => s + q, 0);
+
+  async function copySelectedTradeList() {
+    const sorted = tradeItems.filter((i) => tradeSelection[i.number]).sort(byDrawGroup);
+    const lines = [];
+    let lastGroup = null;
+    for (const item of sorted) {
+      const g = TEAM_TO_GROUP[item.team] || "Tournament";
+      if (g !== lastGroup) {
+        lines.push(`— ${g === "Tournament" ? "TOURNAMENT" : `GROUP ${g}`} —`);
+        lastGroup = g;
+      }
+      lines.push(`#${item.number} ${item.player} (${item.team}) — x${tradeSelection[item.number]}`);
+    }
+    const text = lines.length ? lines.join("\n") : "Nothing selected yet.";
+    const ok = await copyToClipboard(text);
+    setCopyStatus(ok ? "Selected list copied!" : "Couldn't copy — try again.");
+    setTimeout(() => setCopyStatus(""), 3000);
+  }
+
+  function confirmTrade() {
+    const snapshot = {};
+    setStickers((prev) => {
+      const next = { ...prev };
+      for (const [number, qty] of Object.entries(tradeSelection)) {
+        if (!next[number]) continue;
+        snapshot[number] = next[number];
+        next[number] = { ...next[number], owned: Math.max(0, next[number].owned - qty) };
+      }
+      return next;
+    });
+    triggerUndo(`Traded away ${selectedTotalQty} sticker${selectedTotalQty !== 1 ? "s" : ""}`, () => {
+      setStickers((prev) => {
+        const next = { ...prev };
+        for (const [number, snap] of Object.entries(snapshot)) {
+          next[number] = snap;
+        }
+        return next;
+      });
+    });
+    setTradeSelection({});
+    setShowTradeReview(false);
   }
 
   const totals = useMemo(() => {
@@ -163,7 +359,7 @@ export default function StickerTracker() {
     const owned = list.filter((s) => s.owned > 0).length;
     const dupes = list.reduce((sum, s) => sum + Math.max(0, s.owned - 1), 0);
     const parallels = list.reduce((sum, s) => sum + Object.values(s.parallels || {}).reduce((a, b) => a + (b || 0), 0), 0);
-    return { total, owned, dupes, parallels, pct: total ? Math.round((owned / total) * 100) : 0 };
+    return { total, owned, dupes, parallels, missing: total - owned, pct: total ? Math.round((owned / total) * 100) : 0 };
   }, [list]);
 
   const filtered = useMemo(() => {
@@ -304,12 +500,8 @@ export default function StickerTracker() {
 
   async function copyBackup() {
     const text = exportBackup();
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopyStatus("Copied!");
-    } catch (e) {
-      setCopyStatus("Couldn't copy — select and copy the text below manually.");
-    }
+    const ok = await copyToClipboard(text);
+    setCopyStatus(ok ? "Copied!" : "Couldn't copy — select and copy the text below manually.");
     setTimeout(() => setCopyStatus(""), 3000);
   }
 
@@ -364,6 +556,13 @@ export default function StickerTracker() {
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button
+              onClick={() => setShowDupesTab((v) => !v)}
+              title={showDupesTab ? "Hide Dupes tab" : "Show Dupes tab"}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", background: showDupesTab ? "rgba(231,198,94,0.15)" : "rgba(244,239,225,0.08)", border: showDupesTab ? "1px solid rgba(231,198,94,0.4)" : "1px solid rgba(244,239,225,0.2)", color: showDupesTab ? "#E7C65C" : "#F4EFE1", borderRadius: 7, padding: "6px 8px", cursor: "pointer" }}
+            >
+              <Copy size={13} />
+            </button>
+            <button
               onClick={() => setShowUpdateSet((v) => !v)}
               title={showUpdateSet ? "Hide Update Set stickers" : "Show Update Set stickers"}
               style={{ display: "flex", alignItems: "center", gap: 4, background: showUpdateSet ? "rgba(231,198,94,0.15)" : "rgba(244,239,225,0.08)", border: showUpdateSet ? "1px solid rgba(231,198,94,0.4)" : "1px solid rgba(244,239,225,0.2)", color: showUpdateSet ? "#E7C65C" : "#F4EFE1", borderRadius: 7, padding: "6px 8px", fontSize: 10, fontWeight: 600, cursor: "pointer" }}
@@ -387,7 +586,7 @@ export default function StickerTracker() {
 
         {/* Tabs first — jump straight to Trade */}
         <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-          {[["all", "All"], ["missing", "Need"], ["dupes", `Dupes (${totals.dupes})`], ["trade", `Trade (${tradeList.length})`]].map(([key, label]) => (
+          {[["all", "All"], ["missing", `Need (${totals.missing})`], ...(showDupesTab ? [["dupes", `Dupes (${totals.dupes})`]] : []), ["trade", `Trade (${tradeItems.length})`]].map(([key, label]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
@@ -416,6 +615,12 @@ export default function StickerTracker() {
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => setSearchFocused(true)}
             onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.target.blur();
+                setSearchFocused(false);
+              }
+            }}
             placeholder="Search number, team, player"
             autoComplete="off"
             style={{ width: "100%", padding: "9px 10px 9px 32px", borderRadius: 8, border: "1px solid rgba(244,239,225,0.2)", background: "rgba(244,239,225,0.06)", color: "#F4EFE1", fontSize: 14, boxSizing: "border-box" }}
@@ -429,7 +634,7 @@ export default function StickerTracker() {
                   style={{ display: "flex", justifyContent: "space-between", width: "100%", padding: "9px 12px", background: "none", border: "none", borderBottom: "1px solid rgba(244,239,225,0.08)", color: "#F4EFE1", textAlign: "left", cursor: "pointer" }}
                 >
                   <span style={{ fontSize: 13 }}>{s.player} <span style={{ opacity: 0.6 }}>({s.team})</span></span>
-                  <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 12, color: "#E7C65C", flexShrink: 0, marginLeft: 8 }}>#{s.number}</span>
+                  <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 12, color: "#E7C65C", flexShrink: 0, marginLeft: 8 }}>{s.number}</span>
                 </button>
               ))}
             </div>
@@ -441,7 +646,7 @@ export default function StickerTracker() {
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
               <div style={{ flex: 1, height: 8, background: "rgba(244,239,225,0.15)", borderRadius: 999, overflow: "hidden" }}>
-                <div style={{ width: `${totals.pct}%`, height: "100%", background: "#3EA86B", transition: "width 0.3s" }} />
+                <div style={{ width: `${totals.pct}%`, height: "100%", background: "#E7C65C", transition: "width 0.3s" }} />
               </div>
               <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, whiteSpace: "nowrap" }}>
                 {totals.owned}/{totals.total} · {totals.pct}%
@@ -465,40 +670,139 @@ export default function StickerTracker() {
 
         {tab === "trade" && list.length > 0 && (
           <div>
-            <button
-              onClick={copyTradeList}
-              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 0", borderRadius: 8, border: "none", background: "#E7C65C", color: "#1a1a1a", fontWeight: 600, cursor: "pointer", marginBottom: copyStatus ? 6 : 14 }}
-            >
-              <Download size={13} /> Copy trade list
-            </button>
-            {copyStatus && <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 14, textAlign: "center" }}>{copyStatus}</div>}
+            <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+              <button
+                onClick={() => setTradeSortMode("group")}
+                style={{
+                  flex: 1, padding: "7px 4px", borderRadius: 7, border: "none", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                  background: tradeSortMode === "group" ? "#E7C65C" : "rgba(244,239,225,0.08)",
+                  color: tradeSortMode === "group" ? "#1a1a1a" : "#F4EFE1",
+                }}
+              >
+                Draw group
+              </button>
+              <button
+                onClick={() => {
+                  if (tradeSortMode === tradeToggleMode) {
+                    const flipped = tradeToggleMode === "surplus" ? "alpha" : "surplus";
+                    setTradeToggleMode(flipped);
+                    setTradeSortMode(flipped);
+                  } else {
+                    setTradeSortMode(tradeToggleMode);
+                  }
+                }}
+                style={{
+                  flex: 1, padding: "7px 4px", borderRadius: 7, border: "none", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                  background: tradeSortMode === tradeToggleMode ? "#E7C65C" : "rgba(244,239,225,0.08)",
+                  color: tradeSortMode === tradeToggleMode ? "#1a1a1a" : "#F4EFE1",
+                }}
+              >
+                {tradeToggleMode === "surplus" ? "Most tradeable" : "A–Z"}
+              </button>
+            </div>
 
-            {tradeList.length === 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <button
+                onClick={copyTradeList}
+                title="Copy trade list"
+                style={{
+                  display: "flex", alignItems: "center", padding: "4px 6px",
+                  background: "none", border: "none", cursor: "pointer", opacity: 0.4,
+                }}
+              >
+                <Download size={12} color="#F4EFE1" />
+              </button>
+              <button
+                onClick={() => setShowStarPlayers((v) => !v)}
+                title={showStarPlayers ? "Hide star players" : "Show star players"}
+                style={{
+                  display: "flex", alignItems: "center", gap: 4, padding: "4px 6px",
+                  background: "none", border: "none", cursor: "pointer", opacity: showStarPlayers ? 1 : 0.4,
+                  fontSize: 10, fontWeight: 500, color: showStarPlayers ? "#60A5FA" : "#F4EFE1",
+                }}
+              >
+                <Star size={12} fill={showStarPlayers ? "#60A5FA" : "none"} color={showStarPlayers ? "#60A5FA" : "#F4EFE1"} />
+                {showStarPlayers ? "Hide" : "Show"}
+              </button>
+            </div>
+            {copyStatus && <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 10, textAlign: "center" }}>{copyStatus}</div>}
+
+            {tradeItems.length === 0 && (
               <div style={{ textAlign: "center", opacity: 0.6, marginTop: 40, fontSize: 14, lineHeight: 1.6 }}>
                 {query.trim() ? <>No trade matches for "{query}".</> : <>Nothing to trade yet.<br />Base dupes will show up here.</>}
               </div>
             )}
 
-            {tradeList.map((item, i) => (
-              <div
-                key={`${item.number}-${i}`}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px",
-                  borderRadius: 8, border: "1px solid rgba(244,239,225,0.15)",
-                  background: "rgba(244,239,225,0.05)", marginBottom: 6,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      #{item.number} {item.player}
-                    </div>
-                    <div style={{ fontSize: 10, opacity: 0.6 }}>{item.team}</div>
+            {tradeGroups.map((section, sIdx) => (
+              <div key={section.label || `section-${sIdx}`} style={{ marginBottom: section.label ? 18 : 0 }}>
+                {section.label && (
+                  <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 13, letterSpacing: 0.5, color: "#E7C65C", marginBottom: 8, opacity: 0.8 }}>
+                    {section.label}
                   </div>
-                </div>
-                <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>x{item.count}</div>
-                </div>
+                )}
+                {section.teams.map(([team, items]) => {
+                  const teamTotal = items.reduce((s, i) => s + i.count, 0);
+                  const teamKey = `trade-${team}`;
+                  const isCollapsed = collapsed[teamKey];
+                  return (
+                    <div key={team} style={{ marginBottom: 10 }}>
+                      <button
+                        onClick={() => setCollapsed((c) => ({ ...c, [teamKey]: !c[teamKey] }))}
+                        style={{ display: "flex", justifyContent: "space-between", width: "100%", background: "rgba(244,239,225,0.06)", border: "1px solid rgba(244,239,225,0.12)", borderRadius: 8, padding: "8px 10px", color: "#F4EFE1", cursor: "pointer", marginBottom: isCollapsed ? 0 : 6 }}
+                      >
+                        <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, letterSpacing: 0.3, textTransform: "uppercase" }}>{team}</span>
+                        <span style={{ fontSize: 12, opacity: 0.7 }}>{items.length} sticker{items.length !== 1 ? "s" : ""} · {teamTotal} to trade {isCollapsed ? "▸" : "▾"}</span>
+                      </button>
+
+                      {!isCollapsed && (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                          {items.map((item, i) => {
+                            const hot = item.count >= 3;
+                            const isStar = showStarPlayers && STAR_PLAYER_NUMBERS.has(item.number);
+                            const isSelected = !!tradeSelection[item.number];
+                            const selectedQty = tradeSelection[item.number] || 0;
+                            return (
+                              <div
+                                key={`${item.number}-${i}`}
+                                onClick={() => toggleTradeSelect(item)}
+                                style={{
+                                  position: "relative", padding: "8px 4px", borderRadius: 8, cursor: "pointer", textAlign: "center",
+                                  border: isSelected ? "2px solid #E7C65C" : hot ? "1px solid rgba(231,198,94,0.5)" : "1px solid rgba(244,239,225,0.15)",
+                                  background: isSelected ? "rgba(231,198,94,0.16)" : hot ? "rgba(231,198,94,0.08)" : "rgba(244,239,225,0.05)",
+                                }}
+                              >
+                                {isStar && (
+                                  <div style={{ position: "absolute", top: 3, left: 3, opacity: 0.55 }}>
+                                    <Star size={8} color="#60A5FA" fill="none" strokeWidth={2} />
+                                  </div>
+                                )}
+                                {isSelected && (
+                                  <div style={{ position: "absolute", top: 3, right: 3, width: 14, height: 14, borderRadius: 4, background: "#E7C65C", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                    <Check size={10} color="#1a1a1a" strokeWidth={3.5} />
+                                  </div>
+                                )}
+                                <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 14 }}>{item.number}</div>
+                                {isSelected && item.count > 1 ? (
+                                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 4 }}>
+                                    <button onClick={(e) => { e.stopPropagation(); bumpTradeSelectQty(item.number, item.count, -1); }} style={{ background: "rgba(244,239,225,0.15)", border: "none", borderRadius: 4, width: 17, height: 17, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                                      <Minus size={9} color="#F4EFE1" />
+                                    </button>
+                                    <span style={{ fontSize: 10, fontWeight: 700, color: "#E7C65C" }}>{selectedQty}</span>
+                                    <button onClick={(e) => { e.stopPropagation(); bumpTradeSelectQty(item.number, item.count, 1); }} style={{ background: "rgba(244,239,225,0.15)", border: "none", borderRadius: 4, width: 17, height: 17, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                                      <Plus size={9} color="#F4EFE1" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div style={{ fontSize: 10, fontWeight: 600, opacity: hot ? 1 : 0.6, color: hot ? "#E7C65C" : "#F4EFE1", marginTop: 2 }}>x{item.count}</div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ))}
           </div>
@@ -518,7 +822,7 @@ export default function StickerTracker() {
                 <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, letterSpacing: 0.5 }}>
                   {groupLabel === "Tournament" ? "TOURNAMENT" : `GROUP ${groupLabel}`}
                 </span>
-                <span style={{ fontSize: 12, opacity: 0.85 }}>{groupOwned}/{allItems.length} {groupCollapsed ? "▸" : "▾"}</span>
+                <span style={{ fontSize: 12, opacity: 0.8 }}>{groupOwned}/{allItems.length} {groupCollapsed ? "▸" : "▾"}</span>
               </button>
 
               {!groupCollapsed && teams.map(([team, items]) => {
@@ -544,11 +848,11 @@ export default function StickerTracker() {
                     <div
                       key={s.number}
                       className={s.owned > 0 ? "glued" : "slot"}
-                      style={{ position: "relative", padding: "10px 6px 8px", minHeight: 74, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", textAlign: "center" }}
+                      style={{ position: "relative", padding: "7px 4px 6px", minHeight: 58, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", textAlign: "center" }}
                     >
                       <button
                         onClick={() => ALL_OFFICIAL_NUMBERS.has(s.number) ? resetSticker(s.number) : setConfirmDelete(s.number)}
-                        style={{ position: "absolute", top: 2, right: 2, background: "none", border: "none", opacity: 0.35, cursor: "pointer", padding: 2 }}
+                        style={{ position: "absolute", top: 2, right: 2, background: "none", border: "none", opacity: 0.4, cursor: "pointer", padding: 2 }}
                       >
                         <X size={11} color={s.owned > 0 ? "#1a1a1a" : "#F4EFE1"} />
                       </button>
@@ -559,17 +863,22 @@ export default function StickerTracker() {
                         <Sparkles size={11} color={s.owned > 0 ? "#1a1a1a" : "#F4EFE1"} />
                       </button>
                       <div onClick={() => toggleOwned(s.number)} style={{ cursor: "pointer", width: "100%" }}>
-                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 16 }}>#{s.number}</div>
-                        {s.player && <div style={{ fontSize: 10, opacity: 0.75, marginTop: 2, lineHeight: 1.2 }}>{s.player}</div>}
+                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
+                          {s.number}
+                          {showStarPlayers && STAR_PLAYER_NUMBERS.has(s.number) && (
+                            <Star size={8} color="#60A5FA" fill="none" strokeWidth={2} style={{ opacity: 0.55 }} />
+                          )}
+                        </div>
+                        {s.player && <div style={{ fontSize: 9, opacity: 0.7, marginTop: 1, lineHeight: 1.15 }}>{s.player}</div>}
                       </div>
                       {s.owned > 0 && (
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-                          <button onClick={() => bumpDupe(s.number, -1)} style={{ background: "rgba(0,0,0,0.08)", border: "none", borderRadius: 5, width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                            <Minus size={11} />
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
+                          <button onClick={() => bumpDupe(s.number, -1)} style={{ background: "rgba(0,0,0,0.08)", border: "none", borderRadius: 4, width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                            <Minus size={9} />
                           </button>
-                          <span style={{ fontSize: 11, fontWeight: 600, minWidth: 12, textAlign: "center" }}>{s.owned}</span>
-                          <button onClick={() => bumpDupe(s.number, 1)} style={{ background: "rgba(0,0,0,0.08)", border: "none", borderRadius: 5, width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                            <Plus size={11} />
+                          <span style={{ fontSize: 10, fontWeight: 600, minWidth: 10, textAlign: "center" }}>{s.owned}</span>
+                          <button onClick={() => bumpDupe(s.number, 1)} style={{ background: "rgba(0,0,0,0.08)", border: "none", borderRadius: 4, width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                            <Plus size={9} />
                           </button>
                         </div>
                       )}
@@ -579,7 +888,7 @@ export default function StickerTracker() {
                             <div key={p.key} style={{ display: "flex", alignItems: "center", gap: 2 }}>
                               <div style={{ width: 7, height: 7, borderRadius: "50%", background: p.color, border: "1px solid rgba(0,0,0,0.2)" }} />
                               {s.parallels[p.key] > 1 && (
-                                <span style={{ fontSize: 8, fontWeight: 700, opacity: 0.75 }}>×{s.parallels[p.key]}</span>
+                                <span style={{ fontSize: 8, fontWeight: 700, opacity: 0.7 }}>×{s.parallels[p.key]}</span>
                               )}
                             </div>
                           ))}
@@ -629,9 +938,9 @@ export default function StickerTracker() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "flex-end", zIndex: 20 }} onClick={() => setParallelFor(null)}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#211D17", width: "100%", padding: "20px 18px 28px", borderRadius: "16px 16px 0 0" }}>
             <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 17, marginBottom: 2 }}>
-              #{parallelFor} parallels
+              {parallelFor} parallels
             </div>
-            <div style={{ fontSize: 12, opacity: 0.65, marginBottom: 14 }}>
+            <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 14 }}>
               {stickers[parallelFor].player} · {stickers[parallelFor].team}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -694,7 +1003,7 @@ export default function StickerTracker() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20, padding: 24 }} onClick={() => setConfirmDelete(null)}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#211D17", borderRadius: 14, padding: 22, maxWidth: 320 }}>
             <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 17, marginBottom: 8 }}>
-              Delete #{confirmDelete}?
+              Delete {confirmDelete}?
             </div>
             <div style={{ fontSize: 13, opacity: 0.8, lineHeight: 1.5, marginBottom: 18 }}>
               {stickers[confirmDelete].player} · {stickers[confirmDelete].team}. This is a custom entry, so deleting removes it from your list entirely (not just the official checklist stickers, which reset instead of delete).
@@ -702,6 +1011,63 @@ export default function StickerTracker() {
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => setConfirmDelete(null)} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid rgba(244,239,225,0.25)", background: "none", color: "#F4EFE1" }}>Cancel</button>
               <button onClick={() => removeSticker(confirmDelete)} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#DC2626", color: "#F4EFE1", fontWeight: 600 }}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trade selection bar — shows while ticking off what a person wants */}
+      {tab === "trade" && selectedCount > 0 && !showTradeReview && (
+        <div style={{ position: "fixed", bottom: 22, left: 20, right: 20, background: "#E7C65C", color: "#1a1a1a", borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 4px 14px rgba(0,0,0,0.4)", zIndex: 25 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <ShoppingBag size={16} />
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{selectedCount} sticker{selectedCount !== 1 ? "s" : ""} · {selectedTotalQty} total selected</span>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={clearTradeSelection} style={{ background: "none", border: "none", color: "#1a1a1a", opacity: 0.7, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Clear</button>
+            <button onClick={() => setShowTradeReview(true)} style={{ background: "#1a1a1a", border: "none", color: "#E7C65C", borderRadius: 7, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Review</button>
+          </div>
+        </div>
+      )}
+
+      {/* Trade review / confirm modal */}
+      {showTradeReview && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "flex-end", zIndex: 30 }} onClick={() => setShowTradeReview(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#211D17", width: "100%", maxHeight: "80vh", overflowY: "auto", padding: "20px 18px 28px", borderRadius: "16px 16px 0 0" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 17 }}>This trade</div>
+              <button onClick={() => setShowTradeReview(false)} style={{ background: "none", border: "none", color: "#F4EFE1", opacity: 0.6, cursor: "pointer" }}>
+                <X size={18} />
+              </button>
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 14 }}>
+              {selectedCount} sticker{selectedCount !== 1 ? "s" : ""} · {selectedTotalQty} total copies
+            </div>
+
+            {tradeItems
+              .filter((i) => tradeSelection[i.number])
+              .sort((a, b) => naturalCompare(a.number, b.number))
+              .map((item) => (
+                <div key={item.number} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(244,239,225,0.1)" }}>
+                  <span style={{ fontSize: 13 }}>{item.number} {item.player} <span style={{ opacity: 0.6 }}>({item.team})</span></span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#E7C65C" }}>x{tradeSelection[item.number]}</span>
+                </div>
+              ))}
+
+            <button
+              onClick={copySelectedTradeList}
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 0", borderRadius: 8, border: "1px solid rgba(244,239,225,0.25)", background: "none", color: "#F4EFE1", fontWeight: 600, cursor: "pointer", marginTop: 16, marginBottom: copyStatus ? 6 : 10 }}
+            >
+              <Download size={13} /> Copy this list
+            </button>
+            {copyStatus && <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 10, textAlign: "center" }}>{copyStatus}</div>}
+
+            <div style={{ fontSize: 11, opacity: 0.5, marginBottom: 10, lineHeight: 1.4 }}>
+              Confirming removes these quantities from your collection — only do this once the trade actually happens.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={clearTradeSelection} style={{ flex: 1, padding: "11px 0", borderRadius: 8, border: "1px solid rgba(244,239,225,0.25)", background: "none", color: "#F4EFE1", cursor: "pointer" }}>Clear selection</button>
+              <button onClick={confirmTrade} style={{ flex: 1, padding: "11px 0", borderRadius: 8, border: "none", background: "#E7C65C", color: "#1a1a1a", fontWeight: 700, cursor: "pointer" }}>Confirm trade</button>
             </div>
           </div>
         </div>
